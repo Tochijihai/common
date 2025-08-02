@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "user-services"
+resolve_s3 = true
+s3_prefix = "user-services"
+region = "ap-northeast-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=\"dev\" GitHubRepo=\"https://github.com/your-username/tochijihai\""
+image_repositories = []

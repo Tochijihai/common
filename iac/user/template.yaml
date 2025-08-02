@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: User Microservices - Chat AI + Backend API Gateway
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+
+  GitHubRepo:
+    Type: String
+    Default: https://github.com/your-username/tochijihai
+    Description: GitHub repository URL for source code
+
+Globals:
+  Function:
+    Runtime: python3.11
+    MemorySize: 512
+    Timeout: 30
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+
+Resources:
+  # 統合API Gateway for User Services
+  UserServicesAPI:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "*"
+        AllowMethods:
+          - "*"
+
+  # User Chat AI Lambda Function
+  UserChatAIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "user-chat-ai-${Environment}"
+      CodeUri: ../../../user-chat-ai/
+      Handler: aws_sam/handler.lambda_handler
+      Architectures: [x86_64]
+      Environment:
+        Variables:
+          BEDROCK_REGION: us-east-1
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+                - "arn:aws:bedrock:*::foundation-model/*"
+      Events:
+        # /user-chat/* のパスを処理
+        ChatAPI:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref UserServicesAPI
+            Path: /user-chat/{proxy+}
+            Method: ANY
+        # ルートパスも追加
+        ChatAPIRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref UserServicesAPI
+            Path: /user-chat
+            Method: ANY
+
+  # User Backend Lambda Function (Go)
+  UserBackendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "user-backend-${Environment}"
+      CodeUri: ../../../user-backend/function-latest.zip
+      Handler: bootstrap
+      Runtime: provided.al2
+      Architectures: [x86_64]
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+      Events:
+        # /user/* のパスを処理
+        UserAPI:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref UserServicesAPI
+            Path: /user/{proxy+}
+            Method: ANY
+
+Outputs:
+  UserServicesApiUrl:
+    Description: "User Services API Gateway endpoint URL"
+    Value: !Sub "https://${UserServicesAPI}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+
+  UserChatAIFunctionArn:
+    Description: "User Chat AI Lambda Function ARN"
+    Value: !GetAtt UserChatAIFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UserChatAIFunctionArn"
+
+  UserBackendFunctionArn:
+    Description: "User Backend Lambda Function ARN"
+    Value: !GetAtt UserBackendFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UserBackendFunctionArn"
