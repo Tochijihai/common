@@ -15,6 +15,11 @@ Parameters:
     Default: https://github.com/your-username/tochijihai
     Description: GitHub repository URL for source code
 
+  OpinionsTableName:
+    Type: String
+    Default: opinions
+    Description: DynamoDB table name for user opinions
+
 Globals:
   Function:
     Runtime: python3.11
@@ -31,18 +36,16 @@ Resources:
     Properties:
       StageName: !Ref Environment
       CorsConfiguration:
-        AllowOrigins:
-          - "*"
-        AllowHeaders:
-          - "*"
-        AllowMethods:
-          - "*"
+        AllowOrigins: ["*"]
+        AllowHeaders: ["*"]
+        AllowMethods: ["*"]
 
-  # User Chat AI Lambda Function
+  # User Chat AI Lambda Function (Python)
   UserChatAIFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "user-chat-ai-${Environment}"
+      # 衝突回避のためスタック名を付与
+      FunctionName: !Sub "${AWS::StackName}-user-chat-ai-${Environment}"
       CodeUri: ../../../user-chat-ai/
       Handler: aws_sam/handler.lambda_handler
       Architectures: [x86_64]
@@ -59,14 +62,12 @@ Resources:
                 - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
                 - "arn:aws:bedrock:*::foundation-model/*"
       Events:
-        # /user-chat/* のパスを処理
         ChatAPI:
           Type: HttpApi
           Properties:
             ApiId: !Ref UserServicesAPI
             Path: /user-chat/{proxy+}
             Method: ANY
-        # ルートパスも追加
         ChatAPIRoot:
           Type: HttpApi
           Properties:
@@ -78,16 +79,20 @@ Resources:
   UserBackendFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "user-backend-${Environment}"
-      CodeUri: ../../../user-backend/function-latest.zip
+      # 衝突回避のためスタック名を付与
+      FunctionName: !Sub "${AWS::StackName}-user-backend-${Environment}"
+      CodeUri: ../../../user-backend/function.zip
       Handler: bootstrap
       Runtime: provided.al2
       Architectures: [x86_64]
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
+          OPINIONS_TABLE: !Ref OpinionsTableName
+      # ★ DynamoDB フル権限（アカウント内の全テーブル対象）
+      Policies:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
       Events:
-        # /user/* のパスを処理
         UserAPI:
           Type: HttpApi
           Properties:
